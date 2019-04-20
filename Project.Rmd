@@ -1,0 +1,1086 @@
+---
+title: "<center> <h1>Premier League Stats Analysis and Predictions</h1> </center>"
+output:
+  html_document:
+    fig_height: 6
+    fig_width: 8
+    keep_markdown: yes
+    toc: yes
+    toc_depth: 3
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: inline
+---
+
+
+
+#Importing Libraries
+```{r}
+library(MASS)
+suppressMessages(library(ggplot2))
+library(gridExtra)
+suppressMessages(library(VIF))
+library(caret)
+library(corrplot)
+library(car)
+library(ROCR)
+library(e1071)
+library(leaps)
+suppressMessages(library(Metrics))
+suppressMessages(library(glmnet))
+library(class)
+suppressMessages(library(randomForest))
+library(MLmetrics)
+library(naivebayes)
+```
+
+
+#Importing Data
+```{r}
+results = read.csv("../premier-league/data/results.csv")
+stats = read.csv("../premier-league/data/stats.csv")
+df0607 = read.csv("../premier-league/data/season-0607.csv")
+df0708 = read.csv("../premier-league/data/season-0708.csv")
+df0809 = read.csv("../premier-league/data/season-0809.csv")
+df0910 = read.csv("../premier-league/data/season-0910.csv")
+df1011 = read.csv("../premier-league/data/season-1011.csv")
+df1112 = read.csv("../premier-league/data/season-1112.csv")
+df1213 = read.csv("../premier-league/data/season-1213.csv")
+df1314 = read.csv("../premier-league/data/season-1314.csv")
+df1415 = read.csv("../premier-league/data/season-1415.csv")
+df1516 = read.csv("../premier-league/data/season-1516.csv")
+df1617 = read.csv("../premier-league/data/season-1617.csv")
+df1718 = read.csv("../premier-league/data/season-1718.csv")
+```
+
+
+```{r}
+#Checking top few rows of datasets
+head(results)
+head(stats)
+head(df0607)
+```
+
+```{r}
+#Checking top few rows of season 09-10
+head(df0910)
+```
+
+```{r}
+#Checking top few rows of season 08-09
+head(df0809)
+```
+
+
+#Data Cleaning and Wrangling.
+
+```{r}
+#removing unwanted columns in season 2006-2008 to maake total columns consistent from season 2006-2018
+df0607  <- df0607[2:23]
+df0708  <- df0708[2:23]
+df0809  <- df0809[2:23]
+```
+
+
+```{r}
+#checking number of rows and columns in a seasons dataframe
+dim(df0708)
+dim(df1718)
+dim(df1415)
+```
+
+###Merging season 2006-2018 dataframs
+```{r}
+df  <- do.call("rbind", list(df0607,df0708,df0809,df0910,df1011,df1112,df1213,df1314,df1415,df1516,df1617,df1718))
+```
+
+```{r}
+#checking number of rows and columns in the new dataframe
+dim(df)
+```
+
+The merged data frame has total 380*12 = 4560 rows which is correct expected output.
+
+```{r}
+#Checking top few rows of dataframe
+head(df)
+```
+
+
+```{r}
+#saving the dataframe df data into a csv file
+write.csv(df, file = "../premier-league/data/season06-18.csv",row.names=FALSE)
+```
+
+###Incorrect values in saves column in stats dataframe
+
+```{r}
+#checking structure of stats dataset
+str(stats)
+```
+
+
+```{r}
+#Checking unique values in season column
+unique(stats$season)
+```
+
+
+```{r}
+#lookimg for inconsistent vlaues in saves colum for 2007/2008 season.
+stats[stats$season=='2007-2008',c('team','saves')]
+```
+
+```{r}
+#lookimg for inconsistent vlaues in saves colum for 2006/2007 season.
+stats[stats$season=='2006-2007',c('team','saves')]
+```
+
+```{r}
+#lookimg for inconsistent vlaues in saves colum for 2008/2009 season.
+stats[stats$season=='2008-2009',c('team','saves')]
+```
+
+Saves column values from season 2006/2007 - 2012/2013 were not recorded properly.
+
+```{r}
+#missing dispossed values in season 2006/2007
+stats[stats$season == '2006-2007',c('team','dispossessed')]
+```
+
+```{r}
+#checking number of rows with NA values is stats dataset
+sum(!complete.cases(stats))
+```
+
+```{r}
+#looking at top few rows where the data is missing.
+head(stats[!complete.cases(stats),])
+```
+
+```{r}
+#missing values in big_chance_missed column in stats data frame
+stats[is.na(stats$big_chance_missed),c('team','big_chance_missed','season')]
+```
+
+
+```{r}
+#Adding total games played column to the stats dataframe
+stats$total_games  <- rep(38,nrow(stats))
+```
+
+```{r}
+#Displaying top few rows of the stats dataset.
+head(stats)
+```
+
+```{r}
+#saving the stats dataframe
+write.csv(stats,file = "../premier-league/data/stats.csv",row.names=FALSE)
+```
+
+```{r}
+#Importing the stats dataframe
+stats  <- read.csv("../premier-league/data/stats.csv")
+```
+
+
+#Adding manager data to Manchester united
+
+```{r}
+#seperating Manchester united column from stats table
+ManUnited  <- stats[stats$team == 'Manchester United',]
+```
+
+```{r}
+#Top few rows of the dataframe
+head(ManUnited)
+```
+
+```{r}
+#resetting rownames
+rownames(ManUnited) <- NULL
+```
+
+
+```{r}
+#Adding Manager data
+ManUnited$manager  <- rep("Alex Ferguson",nrow(ManUnited))
+ManUnited[ManUnited$season == "2013-2014","manager"]  <- "David Moyes"
+ManUnited[ManUnited$season == "2014-2015","manager"]  <- "Louis van Gaal"
+ManUnited[ManUnited$season == "2015-2016","manager"]  <- "Louis van Gaal"
+ManUnited[ManUnited$season == "2016-2017","manager"]  <- "Jose Mourinho"
+ManUnited[ManUnited$season == "2017-2018","manager"]  <- "Jose Mourinho"
+```
+
+
+```{r}
+#Manchester united dataframe
+head(ManUnited)
+```
+
+```{r}
+#saving the Manchester United dataframe as a csv file
+write.csv(ManUnited, file = "../premier-league/data/ManU.csv",row.names=FALSE)
+```
+
+
+#Extracting Leicester City stats from stats dataframe
+
+```{r}
+#checking unique names in team column
+unique(stats$team)
+```
+
+```{r}
+#extracting leicester city data from stats dataframe
+Leicester  <- stats[stats$team=='Leicester City',]
+```
+
+```{r}
+Leicester
+```
+
+
+
+```{r}
+#saving the file
+write.csv(Leicester,file="../premier-league/data/leicester.csv",row.names=FALSE)
+```
+
+
+
+#Makings Predictions using Seasons dataset.
+```{r}
+#Importing seasons dataset.
+seasons <- read.csv("../premier-league/data/season06-18.csv")
+```
+
+```{r}
+#Correlation Plot
+corrplot(cor(seasons[,c(-1,-2,-3,-6,-9,-10)]), type = "upper", order = "original", 
+         tl.col = "black", tl.srt = 45)
+```
+
+From the above plot we can see that FTHG, FTAG are correlated with HTHG,HTAG because these values are related to number of goals made by Home team and Away team during Half time and Full time of the match. This goes the same for other predictor pairs like HS(home team shots),AS(Away team shots) with HST(Home team shots on target) and AST(Away team shots on target), as they indicate how many shots,shots on target home team and away team made.
+
+
+##Decision Boundary 
+```{r}
+decisionplot <- function(model, data, class = NULL, predict_type = "class",
+  resolution = 100, showgrid = TRUE, ...) {
+
+  if(!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,1:2]
+  k <- length(unique(cl))
+
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+
+  # make grid
+  r <- sapply(data, range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+  
+  p <- predict(model, g, type = predict_type)
+  if(is.list(p)) p <- p$class
+  p <- as.factor(p)
+
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(xs, ys, z, add = TRUE, drawlabels = FALSE,
+    lwd = 2, levels = (1:(k-1))+.5)
+
+  invisible(z)
+}
+```
+
+```{r}
+#checking top few rows of dataset
+head(seasons)
+```
+
+###Train Test Split
+```{r}
+#splitting data into train and test
+set.seed(100)
+trainIndex <- createDataPartition(seasons$FTR,times=1,p=0.8,list=F)
+train <- seasons[trainIndex,]
+test <- seasons[-trainIndex,]
+```
+
+
+##LDA
+
+###Fitting our model
+```{r}
+#fitting the model
+lda.fit <- lda(FTR~.,data=data.frame(train[,c(-1,-10)]))
+```
+
+```{r}
+#making predictions on train dataset
+lda.pred.train <- predict(lda.fit,train[,c(-1,-10)])
+```
+
+```{r}
+#checking the accuracy in train dataset
+mean(lda.pred.train$class==train$FTR)
+```
+
+The accuracy is aroung 88% on train data.
+
+```{r}
+#making predictions on test dataset
+lda.pred <- predict(lda.fit,test[,c(-1,-10)])
+```
+
+
+
+###Metric calculations
+
+```{r}
+#getting predicted classes and displaying a confusion matrix
+lda.class <- lda.pred$class
+table(lda.class,test$FTR)
+```
+
+```{r}
+#checking the accuracy of our results
+mean(lda.class==test$FTR)
+```
+Accuracy on a random choosen test data is 85.4%.
+
+
+```{r}
+#calculating Precision
+Precision(y_pred=lda.class,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=lda.class,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=lda.class,y_true=test$FTR)
+```
+
+
+
+###Using 10-fold cross validation on LDA.
+```{r}
+#using trainControl and train functions to find test error using 10-fold cross validation
+ctrl  <- trainControl(method="cv",number = 10)
+lda.fit1  <- train(FTR~.,data=seasons[,c(-1,-10)],method="lda",trControl=ctrl)
+```
+
+```{r}
+#checing the details of the fit
+lda.fit1
+```
+The accuracy has improved when LDA is used with cross-validation.
+
+```{r}
+#making predictions on test dataset
+lda.pred1 <- predict(lda.fit1,test[,c(-1,-10)])
+```
+
+###Metric calculations
+```{r}
+#Confusion matrix
+table(lda.pred1,test$FTR)
+```
+
+```{r}
+#Checking the accuracy on test dataset
+mean(lda.pred1==test$FTR)
+```
+Using 10-fold cross validation to predict on random test dataset has improved accuray by around 2%.
+
+```{r}
+#calculating Precision
+Precision(y_pred=lda.pred1,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=lda.pred1,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=lda.pred1,y_true=test$FTR)
+```
+
+###Decision Boundry for LDA
+```{r}
+model <- lda(FTR ~., data=train[,c(4,5,6)])
+decisionplot(model, test[,c(4,5,6)] ,class = "FTR", main = "LDA")
+```
+
+
+##Ridge for Mutilnomial models.
+
+###Fitting our model
+```{r}
+#Before passing our predictors into Ridge for fitting we are converting them into matrix form
+x <- model.matrix(FTR~.,data.frame(train[,c(-1,-10)]))[,-1]
+y <- train$FTR
+```
+
+
+```{r}
+#Fitting the model
+grid <- seq(1,100,length=100)
+ridge.fit <- glmnet(x,y,alpha = 0,lambda=grid,family = "multinomial", type.multinomial = "grouped")
+```
+
+
+```{r}
+#plot(ridge.fit,xvar="lambda",label=T)
+```
+
+```{r}
+#using cross validation to find the minimum lambda value
+cvfit=cv.glmnet(x, y, family="multinomial",alpha=0, type.multinomial = "grouped", parallel = TRUE)
+plot(cvfit)
+```
+
+
+```{r}
+#Finiding Minimum lambda value
+cvfit$lambda.min
+```
+
+```{r}
+#making predictions on test data using minimum lambda value
+ridge.predict <- predict(cvfit, newx =  model.matrix(FTR~.,data.frame(test[,c(-1,-10)]))[,-1], s = "lambda.min", type = "class")
+```
+
+###Metric calculations
+
+```{r}
+#confusion matrix
+table(ridge.predict,test$FTR)
+```
+
+```{r}
+#calculating test accuracy
+mean(ridge.predict==test$FTR)*100
+```
+
+The test accuracy has resulted in around 81.4%.
+
+```{r}
+#calculating Precision
+Precision(y_pred=ridge.predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=ridge.predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=ridge.predict,y_true=test$FTR)
+```
+
+
+##NaiveBayes
+
+###Fitting our model
+```{r}
+#Fitting a model
+nb_model<-naiveBayes(FTR~.,data=train[,c(-1,-10)])
+```
+
+```{r}
+#making predictions 
+nb_test_predict <- predict(nb_model,test[,c(-1,-10)])
+```
+
+
+###Metric calculations
+```{r}
+#Confusion Matrix
+conf_matrix <- table(nb_test_predict, test$FTR)
+conf_matrix
+```
+
+```{r}
+#calculating accuracy on test data
+mean(nb_test_predict==test$FTR)*100
+```
+
+```{r}
+#calculating Precision
+Precision(y_pred=nb_test_predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=nb_test_predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=nb_test_predict,y_true=test$FTR)
+```
+
+###Naive Bayes Decision Boundary
+```{r}
+model <- naiveBayes(FTR ~ ., data=train[,c(4,5,6)])
+decisionplot(model,test[,c(4,5,6)], class = "FTR", main = "naive Bayes")
+```
+
+
+
+##KNN
+
+###Fitting our model
+```{r}
+#using trainControl and train functions to find test error using 10-fold cross validation
+repeats = 3
+numbers = 10
+tunel = 10
+
+x = trainControl(method = "repeatedcv",
+                 number = numbers,
+                 repeats = repeats,
+                 classProbs = TRUE,
+                 summaryFunction = multiClassSummary)
+```
+
+```{r}
+knn_model <- train(FTR~. , data = train[,c(-1,-10)], method = "knn",
+               preProcess = c("center","scale"),
+               trControl = x,
+               metric = "logLoss",
+               tuneLength = tunel)
+```
+
+```{r}
+#summary of the model
+knn_model
+```
+
+###Using the Elbow method to find best K-value
+```{r}
+#Using Elbow method to find which optimal K value
+plot(knn_model)
+```
+
+The optimal K values is 13 with a training accuracy of  60.5%.
+
+```{r}
+#making predictions
+knn_pred <- predict(knn_model,test)
+```
+
+###Metric calculations
+```{r}
+#Confusion Matrix
+table(knn_pred,test$FTR)
+```
+
+```{r}
+#calculating accuracy
+mean(knn_pred==test$FTR)
+```
+Test accuracy is aroung 60.9%
+
+```{r}
+#calculating Precision
+Precision(y_pred=knn_pred,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=knn_pred,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=knn_pred,y_true=test$FTR)
+```
+
+F1 score is 57%.
+
+###Decision Boundry
+```{r}
+model <- knn3(FTR ~ ., data=train[,c(4,5,6)], k = 1)
+model1 <- knn3(FTR ~ ., data=train[,c(4,5,6)], k = 13)
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+decisionplot(model, test[,c(4,5,6)], class = "FTR", main = "kNN (1)")
+decisionplot(model1, test[,c(4,5,6)], class = "FTR", main = "kNN (13)")
+```
+
+
+
+
+##RANDOM FOREST
+
+###Fitting our model
+```{r}
+#fitting the model
+random.fit <- randomForest(FTR~.,data=train[,c(-1,-10)],importance=TRUE)
+```
+
+```{r}
+print(random.fit)
+```
+
+```{r}
+#Choosing the best mtry option
+mtry <- tuneRF(train[,c(-1,-10,-6)],train$FTR, ntreeTry=500,
+               stepFactor=1.5,improve=0.01, trace=TRUE, plot=TRUE)
+print(mtry)
+```
+
+mtry=13 has the least OOBError
+
+```{r}
+#Fitting the model with mtry=13
+random.fit1 <- randomForest(FTR~.,data=train[,c(-1,-10)],mtry=13,importance=TRUE)
+```
+
+
+```{r}
+print(random.fit1)
+```
+
+###Variable Importance Plot
+```{r}
+#VarImpPlot is helpful to see the important variables from random forest model
+varImpPlot(random.fit1)
+```
+
+Though we have many predictors Only Full time Home team goals and Full time Away goals look's useful in predicting our end result.
+
+```{r}
+#Making predictions on test set
+yhat.bag = predict(random.fit1 ,newdata=test[,c(-1,-10)])
+```
+
+###Metric calculations
+
+```{r}
+#confusion matrix
+table(yhat.bag,test$FTR)
+```
+
+It has only missclassified only one data point.
+
+```{r}
+#calculating accuracy.
+mean(yhat.bag == test$FTR)*100
+```
+
+Random forest has  an accuracy of 99.89%
+
+```{r}
+#calculating Precision
+Precision(y_pred=yhat.bag,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=yhat.bag,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=yhat.bag,y_true=test$FTR)
+```
+
+###Decision Boundary
+```{r}
+#Descision Boundary
+model <- randomForest(FTR ~ ., data=train[,c(4,5,6)])
+decisionplot(model, test[,c(4,5,6)], class = "FTR", main = "Random Forest")
+```
+
+
+#Making Predictions after removing Full time, Halftime home team goals, away team goals, and Half time result.
+```{r}
+#removing Full time and half time goals
+df <- seasons[,c(-1,-4,-5,-7,-8,-9,-10)]
+```
+
+```{r}
+head(df)
+```
+
+
+###Train Test Split
+```{r}
+#splitting data into train and test
+set.seed(100)
+trainIndex <- createDataPartition(df$FTR,times=1,p=0.8,list=F)
+train <- df[trainIndex,]
+test <- df[-trainIndex,]
+```
+
+
+##LDA
+
+###Fitting our model
+```{r}
+#fitting the model
+lda.fit <- lda(FTR~.,data=data.frame(train))
+```
+
+```{r}
+#making predictions on train dataset
+lda.pred.train <- predict(lda.fit,train)
+```
+
+```{r}
+#checking the accuracy in train dataset
+mean(lda.pred.train$class==train$FTR)
+```
+
+The accuracy is 61.3% on train data.
+
+```{r}
+#making predictions on test dataset
+lda.pred <- predict(lda.fit,test)
+```
+
+
+###Metric calculations
+
+```{r}
+#getting predicted classes and displaying a confusion matrix
+lda.class <- lda.pred$class
+table(lda.class,test$FTR)
+```
+
+```{r}
+#checking the accuracy of our results
+mean(lda.class==test$FTR)
+```
+Accuracy on a random choosen test data is 53.5%.
+
+
+```{r}
+#calculating Precision
+Precision(y_pred=lda.class,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=lda.class,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=lda.class,y_true=test$FTR)
+```
+
+
+###Using 10-fold cross validation on LDA.
+```{r}
+#using trainControl and train functions to find test error using 10-fold cross validation
+ctrl  <- trainControl(method="cv",number = 10)
+lda.fit1  <- train(FTR~.,data=train,method="lda",trControl=ctrl)
+```
+
+```{r}
+#checing the details of the fit
+lda.fit1
+```
+The accuracy has improved when LDA is used with cross-validation.
+
+```{r}
+#making predictions on test dataset
+lda.pred1 <- predict(lda.fit1,test)
+```
+
+###Metric calculations
+```{r}
+#Confusion matrix
+table(lda.pred1,test$FTR)
+```
+
+```{r}
+#Checking the accuracy on test dataset
+mean(lda.pred1==test$FTR)
+```
+Using 10-fold cross validation to predict on random test dataset has improved accuray by around 2%.
+
+```{r}
+#calculating Precision
+Precision(y_pred=lda.pred1,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=lda.pred1,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=lda.pred1,y_true=test$FTR)
+```
+
+
+
+##Ridge for Mutilnomial models.
+
+###Fitting our model
+```{r}
+#Before passing our predictors into Ridge for fitting we are converting them into matrix form
+x <- model.matrix(FTR~.,data.frame(train))[,-1]
+y <- train$FTR
+```
+
+
+```{r}
+#Fitting the model
+grid <- seq(1,100,length=100)
+ridge.fit <- glmnet(x,y,alpha = 0,lambda=grid,family = "multinomial", type.multinomial = "grouped")
+```
+
+
+
+```{r}
+#using cross validation to find the minimum lambda value
+cvfit=cv.glmnet(x, y, family="multinomial",alpha=0, type.multinomial = "grouped", parallel = TRUE)
+plot(cvfit)
+```
+
+
+```{r}
+#Finiding Minimum lambda value
+cvfit$lambda.min
+```
+
+```{r}
+#making predictions on test data using minimum lambda value
+ridge.predict <- predict(cvfit, newx =  model.matrix(FTR~.,data.frame(test))[,-1], s = "lambda.min", type = "class")
+```
+
+###Metric calculations
+
+```{r}
+#confusion matrix
+table(ridge.predict,test$FTR)
+```
+
+```{r}
+#calculating test accuracy
+mean(ridge.predict==test$FTR)*100
+```
+
+The test accuracy has resulted in around 54.22%.
+
+```{r}
+#calculating Precision
+Precision(y_pred=ridge.predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=ridge.predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=ridge.predict,y_true=test$FTR)
+```
+
+
+##NaiveBayes
+
+###Fitting our model
+```{r}
+#Fitting a model
+nb_model<-naiveBayes(FTR~.,data=train)
+```
+
+```{r}
+#making predictions 
+nb_test_predict <- predict(nb_model,test)
+```
+
+
+###Metric calculations
+```{r}
+#Confusion Matrix
+conf_matrix <- table(nb_test_predict, test$FTR)
+conf_matrix
+```
+
+```{r}
+#calculating accuracy on test data
+mean(nb_test_predict==test$FTR)*100
+```
+
+It has an accuracy of 51.3% on test data.
+
+```{r}
+#calculating Precision
+Precision(y_pred=nb_test_predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=nb_test_predict,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=nb_test_predict,y_true=test$FTR)
+```
+
+##KNN
+
+###Fitting our model
+```{r}
+#using trainControl and train functions to find test error using 10-fold cross validation
+repeats = 3
+numbers = 10
+tunel = 10
+
+x = trainControl(method = "repeatedcv",
+                 number = numbers,
+                 repeats = repeats,
+                 classProbs = TRUE,
+                 summaryFunction = multiClassSummary)
+```
+
+```{r}
+knn_model <- train(FTR~. , data = train, method = "knn",
+               preProcess = c("center","scale"),
+               trControl = x,
+               metric = "logLoss",
+               tuneLength = tunel)
+```
+
+```{r}
+#summary of the model
+knn_model
+```
+
+###Using the Elbow method to find best K-value
+```{r}
+#Using Elbow method to find which optimal K value
+plot(knn_model)
+```
+
+The optimal K values is 9 with a training accuracy of  50.9%.
+
+```{r}
+#making predictions
+knn_pred <- predict(knn_model,test)
+```
+
+###Metric calculations
+```{r}
+#Confusion Matrix
+table(knn_pred,test$FTR)
+```
+
+```{r}
+#calculating accuracy
+mean(knn_pred==test$FTR)
+```
+Test accuracy is aroung 49.9%
+
+```{r}
+#calculating Precision
+Precision(y_pred=knn_pred,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=knn_pred,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=knn_pred,y_true=test$FTR)
+```
+
+F1 score is 44.3%.
+
+
+##RANDOM FOREST
+
+###Fitting our model
+```{r}
+#fitting the model
+random.fit <- randomForest(FTR~.,data=train,importance=TRUE)
+```
+
+```{r}
+print(random.fit)
+```
+
+
+```{r}
+#Fitting the model with mtry=13
+random.fit1 <- randomForest(FTR~.,data=train,mtry=4,importance=TRUE)
+```
+
+
+```{r}
+print(random.fit1)
+```
+
+###Variable Importance Plot
+```{r}
+#VarImpPlot is helpful to see the important variables from random forest model
+varImpPlot(random.fit1)
+```
+
+
+```{r}
+#Making predictions on test set
+yhat.bag = predict(random.fit1 ,newdata=test)
+```
+
+###Metric calculations
+
+```{r}
+#confusion matrix
+table(yhat.bag,test$FTR)
+```
+
+
+```{r}
+#calculating accuracy.
+mean(yhat.bag == test$FTR)*100
+```
+
+Random forest has  an accuracy of 61.03%
+
+```{r}
+#calculating Precision
+Precision(y_pred=yhat.bag,y_true=test$FTR)
+```
+
+```{r}
+#calculating Recall
+Recall(y_pred=yhat.bag,y_true=test$FTR)
+```
+
+```{r}
+#calculating F1 Score
+F1_Score(y_pred=yhat.bag,y_true=test$FTR)
+```
+
+
